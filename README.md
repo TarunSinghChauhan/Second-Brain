@@ -17,9 +17,7 @@ Run this in WSL2:
 free -h
 ```
 
-- **16GB+ total** → use the default model (`llama3.1:8b`), already set in `docker-compose.yml`.
-- **8GB** → switch to a smaller model. Edit `LLM_MODEL` in `docker-compose.yml` to `qwen2.5:3b` or `phi3:mini`, and update the `ollama pull` command in step 2 to match.
-
+This project defaults to `qwen2.5:3b` — a smaller, faster model chosen after testing, since it comfortably fits even modest free disk space and RAM (~2GB model size) while still answering grounded questions well. If you have 16GB+ RAM and plenty of free disk space, you can optionally switch to a larger model like `llama3.1:8b` for better answer quality — just update `LLM_MODEL` in `docker-compose.yml` and the `ollama pull` command in step 2 to match.
 ---
 
 ## 1. Install Ollama
@@ -51,7 +49,7 @@ pull the two models this project needs:
 
 ```bash
 # If running Ollama natively:
-ollama pull llama3.1:8b
+ollama pull qwen2.5:3b
 ollama pull nomic-embed-text
 
 # If using the Docker Compose ollama service, pull inside the container instead:
