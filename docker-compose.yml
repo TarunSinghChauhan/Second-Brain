@@ -1,0 +1,62 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: secondbrain-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: secondbrain
+      POSTGRES_PASSWORD: secondbrain
+      POSTGRES_DB: secondbrain
+    ports:
+      - "5433:5432"   # 5433 on host to avoid clashing with any local postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U secondbrain"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: secondbrain-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Uncomment below if you have an NVIDIA GPU + nvidia-container-toolkit installed
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  backend:
+    build: ./backend
+    container_name: secondbrain-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://secondbrain:secondbrain@postgres:5432/secondbrain
+      OLLAMA_URL: http://ollama:11434
+      LLM_MODEL: qwen2.5:3b
+      EMBED_MODEL: nomic-embed-text
+      VAULT_PATH: /vault
+      EMBED_DIM: 768
+    volumes:
+      - ./backend/app:/app/app
+      # Point this at your real Obsidian vault folder on your machine:
+      - ${VAULT_HOST_PATH:-./vault_example}:/vault
+    ports:
+      - "8000:8000"
+
+volumes:
+  pgdata:
+  ollama_data:

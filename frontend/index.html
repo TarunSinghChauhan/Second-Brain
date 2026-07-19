@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Second Brain — Local Neural Interface</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: #10151d;
+    --panel-raised: #141b25;
+    --border: #1f2937;
+    --border-bright: #2d3b4d;
+    --text: #e6edf3;
+    --muted: #6b7785;
+    --cyan: #5eead4;
+    --cyan-dim: #2a5b52;
+    --magenta: #ff5da2;
+    --red: #ff5d7a;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Inter', -apple-system, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  #neural-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    display: block;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* ---------- scanline ambient texture ---------- */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      180deg,
+      rgba(255,255,255,0.012) 0px,
+      rgba(255,255,255,0.012) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    z-index: 1;
+    opacity: 0.5;
+  }
+
+  /* ---------- boot overlay ---------- */
+  #boot {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    color: var(--cyan);
+    letter-spacing: 0.05em;
+    transition: opacity 0.6s ease;
+  }
+  #boot .boot-line {
+    font-size: 13px;
+    opacity: 0;
+    animation: bootFade 0.4s ease forwards;
+  }
+  #boot .boot-line:nth-child(1) { animation-delay: 0.1s; }
+  #boot .boot-line:nth-child(2) { animation-delay: 0.5s; }
+  #boot .boot-line:nth-child(3) { animation-delay: 0.9s; }
+  #boot .cursor-blink {
+    display: inline-block;
+    width: 7px;
+    height: 14px;
+    background: var(--cyan);
+    margin-left: 4px;
+    animation: blink 0.8s steps(1) infinite;
+    vertical-align: middle;
+  }
+  @keyframes bootFade { to { opacity: 1; } }
+  @keyframes blink { 50% { opacity: 0; } }
+  #boot.hidden { opacity: 0; pointer-events: none; }
+
+  /* ---------- layout ---------- */
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    position: relative;
+    z-index: 2;
+  }
+
+  header {
+    padding: 18px 28px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(10, 14, 20, 0.7);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .brand-mark {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--magenta);
+    box-shadow: 0 0 12px rgba(255,93,162,0.6);
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.85); }
+  }
+  .brand h1 {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: 0.02em;
+  }
+  .brand h1 span { color: var(--muted); font-weight: 400; }
+
+  .toolbar { display: flex; align-items: center; gap: 14px; }
+  .toolbar button {
+    background: transparent;
+    border: 1px solid var(--border-bright);
+    color: var(--muted);
+    padding: 6px 12px;
+    font-size: 11px;
+    font-family: var(--mono);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .toolbar button:hover {
+    border-color: var(--cyan-dim);
+    color: var(--cyan);
+  }
+  #status {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  #status .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--muted);
+  }
+  #status.ok .dot { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
+  #status.ok { color: var(--cyan); }
+  #status.bad .dot { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  #status.bad { color: var(--red); }
+
+  main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 32px 28px;
+    max-width: 760px;
+    margin: 0 auto;
+    width: 100%;
+    background: rgba(10, 14, 20, 0.55);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+  }
+  main::-webkit-scrollbar { width: 6px; }
+  main::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
+
+  .msg { margin-bottom: 28px; animation: riseIn 0.35s ease; }
+  @keyframes riseIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .msg .role {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .msg.you .role::before { content: "›"; color: var(--magenta); font-size: 13px; }
+  .msg.assistant .role::before { content: "◆"; color: var(--cyan); font-size: 9px; }
+  .msg.system .role::before { content: "⚙"; color: var(--muted); font-size: 10px; }
+  .msg .content {
+    white-space: pre-wrap;
+    line-height: 1.6;
+    font-size: 14.5px;
+  }
+  .msg.you .content { color: var(--text); font-weight: 500; }
+
+  /* ---------- thinking indicator ---------- */
+  .thinking { display: flex; gap: 4px; padding: 2px 0; }
+  .thinking span {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--cyan);
+    animation: think 1.1s ease-in-out infinite;
+  }
+  .thinking span:nth-child(2) { animation-delay: 0.15s; }
+  .thinking span:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes think {
+    0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+    30% { opacity: 1; transform: translateY(-3px); }
+  }
+
+  /* ---------- retrieval trace ---------- */
+  .trace-wrap { margin-top: 12px; }
+  .trace-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .trace-line svg { flex-shrink: 0; }
+  .trace-path {
+    stroke: var(--cyan-dim);
+    stroke-width: 1.5;
+    fill: none;
+    stroke-dasharray: 40;
+    stroke-dashoffset: 40;
+    animation: draw 0.5s ease forwards;
+  }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+
+  .sources {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+  .source-chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--panel-raised);
+    border: 1px solid var(--border-bright);
+    padding: 4px 10px;
+    border-radius: 3px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0;
+    animation: chipIn 0.3s ease forwards;
+  }
+  .source-chip .node {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--cyan);
+    flex-shrink: 0;
+  }
+  .source-chip .score { color: var(--cyan); }
+  @keyframes chipIn {
+    from { opacity: 0; transform: translateX(-4px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  footer {
+    padding: 20px 28px 26px;
+    border-top: 1px solid var(--border);
+    max-width: 760px;
+    margin: 0 auto;
+    width: 100%;
+    background: rgba(10, 14, 20, 0.55);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+  }
+  .input-row { display: flex; gap: 10px; }
+  .input-wrap {
+    flex: 1;
+    position: relative;
+  }
+  .input-wrap::before {
+    content: ">";
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--magenta);
+    font-family: var(--mono);
+    font-size: 14px;
+    pointer-events: none;
+  }
+  input {
+    width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--border-bright);
+    color: var(--text);
+    padding: 13px 14px 13px 30px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: var(--mono);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  input::placeholder { color: var(--muted); }
+  input:focus {
+    outline: none;
+    border-color: var(--cyan-dim);
+    box-shadow: 0 0 0 3px rgba(94,234,212,0.08);
+  }
+  button.send-btn {
+    background: var(--cyan);
+    color: #06120f;
+    border: none;
+    padding: 13px 22px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-family: var(--mono);
+    font-size: 13px;
+    cursor: pointer;
+    transition: filter 0.15s ease;
+  }
+  button.send-btn:hover { filter: brightness(1.1); }
+  button.send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .hint {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 10px;
+    opacity: 0.6;
+  }
+
+  /* ---------- empty state ---------- */
+  #empty-state {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+  }
+  .empty-text {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+    letter-spacing: 0.04em;
+  }
+  .empty-text .accent { color: var(--cyan); }
+  .empty-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    max-width: 480px;
+  }
+  .suggestion-chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--panel);
+    border: 1px solid var(--border-bright);
+    padding: 7px 13px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .suggestion-chip:hover {
+    color: var(--cyan);
+    border-color: var(--cyan-dim);
+    transform: translateY(-1px);
+  }
+</style>
+</head>
+<body>
+
+<canvas id="neural-bg"></canvas>
+
+<div id="boot">
+  <div>
+    <div class="boot-line">&gt; connecting to local neural interface<span class="cursor-blink"></span></div>
+    <div class="boot-line">&gt; loading vector index...</div>
+    <div class="boot-line">&gt; ready.</div>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <h1>SECOND BRAIN <span>// local rag console</span></h1>
+    </div>
+    <div class="toolbar">
+      <button onclick="reindex()">re-index vault</button>
+      <span id="status"><span class="dot"></span>checking...</span>
+    </div>
+  </header>
+
+  <main id="messages">
+    <div id="empty-state">
+      <div class="empty-text">no query yet — <span class="accent">your vault is indexed and waiting</span></div>
+      <div class="empty-suggestions">
+        <span class="suggestion-chip" onclick="askSuggestion(this)">What is my educational background?</span>
+        <span class="suggestion-chip" onclick="askSuggestion(this)">What projects have I built?</span>
+        <span class="suggestion-chip" onclick="askSuggestion(this)">What roles am I targeting?</span>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="input-row">
+      <div class="input-wrap">
+        <input id="input" type="text" placeholder="ask something from your notes..." onkeydown="if(event.key==='Enter') send()" />
+      </div>
+      <button class="send-btn" id="sendBtn" onclick="send()">SEND</button>
+    </div>
+    <div class="hint">retrieval runs entirely on-device — no external calls</div>
+  </footer>
+</div>
+
+<script>
+// ---------- full-screen neural network background ----------
+(function() {
+  const canvas = document.getElementById("neural-bg");
+  const ctx = canvas.getContext("2d");
+  let w, h, nodes, pulses;
+
+  function resize() {
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  const NODE_COUNT = Math.max(28, Math.floor((w * h) / 45000));
+  const CONNECT_DIST = 170;
+  const CYAN = "94,234,212";
+  const MAGENTA = "255,93,162";
+
+  function makeNodes() {
+    nodes = [];
+    for (let i = 0; i < NODE_COUNT; i++) {
+      nodes.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 0.7,
+        vy: (Math.random() - 0.5) * 0.7,
+        r: Math.random() * 1.4 + 1,
+        hue: Math.random() < 0.12 ? MAGENTA : CYAN,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+  makeNodes();
+
+  // occasional data pulses traveling along an edge — represents a query/embedding moving through the network
+  pulses = [];
+  function maybeSpawnPulse() {
+    if (Math.random() < 0.06 && nodes.length > 1) {
+      const a = nodes[Math.floor(Math.random() * nodes.length)];
+      let b = nodes[Math.floor(Math.random() * nodes.length)];
+      let tries = 0;
+      while (Math.hypot(a.x - b.x, a.y - b.y) > CONNECT_DIST && tries < 8) {
+        b = nodes[Math.floor(Math.random() * nodes.length)];
+        tries++;
+      }
+      pulses.push({ a, b, t: 0 });
+    }
+  }
+
+  function step() {
+    ctx.clearRect(0, 0, w, h);
+
+    // update + draw nodes
+    for (const n of nodes) {
+      n.x += n.vx;
+      n.y += n.vy;
+      if (n.x < 0 || n.x > w) n.vx *= -1;
+      if (n.y < 0 || n.y > h) n.vy *= -1;
+      n.phase += 0.05;
+    }
+
+    // draw connections
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d < CONNECT_DIST) {
+          const alpha = (1 - d / CONNECT_DIST) * 0.13;
+          ctx.strokeStyle = `rgba(${CYAN},${alpha})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // draw nodes with subtle pulse glow
+    for (const n of nodes) {
+      const glow = 0.5 + Math.sin(n.phase) * 0.3;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r + glow, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${n.hue},${0.35 + glow * 0.25})`;
+      ctx.fill();
+    }
+
+    // update + draw traveling pulses
+    maybeSpawnPulse();
+    pulses = pulses.filter(p => p.t < 1);
+    for (const p of pulses) {
+      p.t += 0.035;
+      const x = p.a.x + (p.b.x - p.a.x) * p.t;
+      const y = p.a.y + (p.b.y - p.a.y) * p.t;
+      ctx.beginPath();
+      ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${MAGENTA},0.9)`;
+      ctx.shadowColor = `rgba(${MAGENTA},0.8)`;
+      ctx.shadowBlur = 8;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    requestAnimationFrame(step);
+  }
+  step();
+})();
+</script>
+<script>
+const API = "http://localhost:8000";
+const messagesEl = document.getElementById("messages");
+const statusEl = document.getElementById("status");
+
+// boot sequence
+setTimeout(() => {
+  document.getElementById("boot").classList.add("hidden");
+}, 1400);
+
+async function checkStatus() {
+  try {
+    const res = await fetch(`${API}/status`);
+    const data = await res.json();
+    if (data.ollama.reachable) {
+      statusEl.innerHTML = `<span class="dot"></span>${data.documents_indexed} docs · ${data.chunks_indexed} chunks indexed`;
+      statusEl.className = "ok";
+    } else {
+      statusEl.innerHTML = `<span class="dot"></span>ollama unreachable`;
+      statusEl.className = "bad";
+    }
+  } catch (e) {
+    statusEl.innerHTML = `<span class="dot"></span>backend unreachable`;
+    statusEl.className = "bad";
+  }
+}
+
+function traceSvg() {
+  return `<svg width="16" height="12" viewBox="0 0 16 12">
+    <path class="trace-path" d="M0,6 L16,6" />
+  </svg>`;
+}
+
+function clearEmptyState() {
+  const empty = document.getElementById("empty-state");
+  if (empty) empty.remove();
+}
+
+function askSuggestion(el) {
+  document.getElementById("input").value = el.textContent;
+  send();
+}
+
+function addMessage(role, content, sources) {
+  clearEmptyState();
+  const div = document.createElement("div");
+  const roleClass = role.toLowerCase();
+  div.className = `msg ${roleClass}`;
+
+  let sourcesHtml = "";
+  if (sources && sources.length) {
+    const chips = sources.map((s, i) =>
+      `<span class="source-chip" style="animation-delay:${i * 0.06}s">
+        <span class="node"></span>${s.title} <span class="score">${s.distance.toFixed(3)}</span>
+      </span>`
+    ).join("");
+    sourcesHtml = `<div class="trace-wrap"><div class="trace-line">${traceSvg()}<div class="sources">${chips}</div></div></div>`;
+  }
+
+  div.innerHTML = `<div class="role">${role}</div><div class="content"></div>${sourcesHtml}`;
+  div.querySelector(".content").textContent = content;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
+}
+
+function addThinking() {
+  clearEmptyState();
+  const div = document.createElement("div");
+  div.className = "msg assistant";
+  div.innerHTML = `<div class="role">Assistant</div><div class="thinking"><span></span><span></span><span></span></div>`;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
+}
+
+async function send() {
+  const input = document.getElementById("input");
+  const sendBtn = document.getElementById("sendBtn");
+  const question = input.value.trim();
+  if (!question) return;
+
+  addMessage("You", question);
+  input.value = "";
+  sendBtn.disabled = true;
+  const thinkingEl = addThinking();
+
+  try {
+    const res = await fetch(`${API}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    });
+    const data = await res.json();
+    messagesEl.removeChild(thinkingEl);
+    addMessage("Assistant", data.answer, data.sources);
+  } catch (e) {
+    messagesEl.removeChild(thinkingEl);
+    addMessage("Assistant", "Error: could not reach backend. Is docker compose running?");
+  }
+  sendBtn.disabled = false;
+  checkStatus();
+}
+
+async function reindex() {
+  statusEl.innerHTML = `<span class="dot"></span>re-indexing...`;
+  try {
+    const res = await fetch(`${API}/ingest`, { method: "POST" });
+    const data = await res.json();
+    addMessage("System", `re-index complete: ${data.created} created, ${data.updated} updated, ${data.skipped} skipped, ${data.removed} removed.`);
+  } catch (e) {
+    addMessage("System", "re-index failed: could not reach backend.");
+  }
+  checkStatus();
+}
+
+checkStatus();
+setInterval(checkStatus, 10000);
+</script>
+
+</body>
+</html>

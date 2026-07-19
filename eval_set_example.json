@@ -1,0 +1,12 @@
+{
+  "eval_set": [
+    {"question": "What tech stack and tools do I use daily?", "expected_path": "Skills.md"},
+    {"question": "What projects have I built?", "expected_path": "projects.md"},
+    {"question": "Where did I do my internships?", "expected_path": "experience.md"},
+    {"question": "What kind of AI Engineer roles am I targeting?", "expected_path": "career-goals.md"},
+    {"question": "What is my educational background?", "expected_path": "About Me.md"},
+    {"question": "Do I prioritize production-grade systems over demo-only prototypes?", "expected_path": "career-goals.md"},
+    {"question": "What framework and database do I use for backend development?", "expected_path": "Skills.md"},
+    {"question": "What LLM tracing tool have I used?", "expected_path": "Skills.md"}
+  ]
+}
