@@ -166,3 +166,6 @@ thing to screenshot/write up for a portfolio case study.
 - No auth — this is a single-user local tool, not deployed publicly.
 - Local models trade some answer quality for zero cost vs. hosted models
   like GPT-4/Claude — worth benchmarking and writing up the comparison.
+test
+# testing setup
+# testing setup
